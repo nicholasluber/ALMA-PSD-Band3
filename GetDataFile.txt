@@ -1,0 +1,71 @@
+"""
+CASA script to properly get the data from the fully self calibrated visibilities.
+Variables are hard-coded for the Band 3 data.
+@Nick Luber
+"""
+
+import numpy as np
+import os
+
+### Do the proper mstransforms, it takes a couple to be correct.
+
+# Use mstransform to get just the target data, and to combine SpWs.
+default('mstransform')
+vis='band3.ms'
+outputvis='band3_target_1spw.ms'
+field='Sun_10'
+combinespws=True
+datacolumn='corrected'
+mstransform()
+
+# Use mstransform to average the channel data.
+default('mstransform')
+vis='band3_target_1spw.ms'
+outputvis='band3_avg.ms'
+field='Sun_10'
+chanaverage=True
+chanbin=4
+datacolumn='data'
+mstransform()
+
+# Use mstransform to get rid of the dead antennas.
+default('mstransform')
+vis='band3_avg.ms'
+outputvis='band3_use.ms'
+antenna='!CM09,DA54,DA57,DV17'
+keepflags=False
+datacolumn='data'
+mstransform()
+
+### Use tb queries to fetch the data.
+
+# Do the tb queries.
+tb.open('band3_use.ms')
+alldata = tb.taql('select DATA, TIME, UVW from band3_use.ms')
+data = tb.getcol('DATA')
+time = tb.getcol('TIME')
+uvw = tb.getcol('UVW')
+tb.close()
+
+# Average the two correlations.
+data_I = np.sqrt(np.sum(np.square(data), axis=0))[0]
+
+# Get the times, zeroed out.
+time -= time[0]
+
+# Calculate the UV distance.
+uv = np.sqrt((np.square(uvw[0])+np.square(uvw[1])))
+
+# Put data into one final array.
+final = np.zeros((len(uv), 4))
+final[:,0] = time
+final[:,1] = uv
+final[:,2] = np.real(data_I)
+final[:,3] = np.imag(data_I)
+
+# Save data into one final array.
+np.savetxt('band3.data', final)
+
+# Delete the CASA logs and the .last files.
+cmd = 'rm -Rf casa-* *.last'
+os.system(cmd)
